@@ -26,18 +26,13 @@ SHAPES = {
     "반원": "semicircle",
     "1/4원": "quarter",
 }
-SHAPE_LABELS = {value: key for key, value in SHAPES.items()}
 
 if "artwork" not in st.session_state:
     st.session_state.artwork = []
-if "unlocked_key" not in st.session_state:
-    st.session_state.unlocked_key = None
 if "awaiting_continue" not in st.session_state:
     st.session_state.awaiting_continue = False
 if "finished" not in st.session_state:
     st.session_state.finished = False
-if "selected_color" not in st.session_state:
-    st.session_state.selected_color = next(iter(COLORS))
 
 
 def shape_measure(radius: int, shape: str, measure: str) -> float:
@@ -64,7 +59,8 @@ def shape_formula(radius: int, shape: str, measure: str) -> str:
 
 
 def format_number(value: float) -> str:
-    return str(int(value)) if value.is_integer() else f"{value:g}"
+    number = float(value)
+    return str(int(number)) if number.is_integer() else f"{number:g}"
 
 
 def drawing_svg(items: list[dict], framed: bool = False) -> str:
@@ -104,7 +100,10 @@ def drawing_svg(items: list[dict], framed: bool = False) -> str:
     drawing.append("</svg>")
     artwork = "".join(drawing)
     if not framed:
-        return artwork
+        return (
+            '<div style="padding:12px;background:white;border:3px solid #eadcc7;'
+            f'border-radius:22px;box-shadow:0 6px 18px #72552a12">{artwork}</div>'
+        )
     return (
         '<div style="background:linear-gradient(135deg,#f8e6c8,#fff8eb);'
         'padding:34px 7%;border-radius:18px;text-align:center">'
@@ -114,6 +113,17 @@ def drawing_svg(items: list[dict], framed: bool = False) -> str:
         f'<div style="background:#fffdf8;padding:8px">{artwork}</div></div>'
         '<div style="font-size:16px;color:#755c45;margin-top:16px">멋진 작품이 완성되었어요!</div>'
         "</div>"
+    )
+
+
+def show_drawing(items: list[dict], framed: bool = False) -> None:
+    content = drawing_svg(items, framed=framed)
+    height = 540 if framed else 400
+    st.iframe(
+        f'<style>html,body{{margin:0;background:transparent}}</style>{content}',
+        width="stretch",
+        height=height,
+        alt="완성 중인 원 그림판" if not framed else "액자에 걸린 완성 작품",
     )
 
 
@@ -149,39 +159,34 @@ st.markdown(
 )
 st.markdown(
     '<div class="pi-note"><b>오늘의 약속!</b> 이 활동에서는 계산하기 쉽게 원주율(π)을 '
-    '<b>3</b>으로 계산해요. 반지름이 홀수면 둘레, 짝수면 넓이를 맞혀 보세요.</div>',
+    '<b>3</b>으로 계산해요. 도형의 <b>넓이</b>와 <b>둘레</b> 중 원하는 것을 골라 맞혀 보세요.</div>',
     unsafe_allow_html=True,
 )
 
 if st.session_state.finished:
     st.subheader("작품이 액자에 걸렸어요! 🖼️")
-    st.markdown(
-        f'<div class="board">{drawing_svg(st.session_state.artwork, framed=True)}</div>',
-        unsafe_allow_html=True,
-    )
+    show_drawing(st.session_state.artwork, framed=True)
     if st.button("새 작품 만들기", type="primary"):
         st.session_state.artwork = []
-        st.session_state.unlocked_key = None
         st.session_state.awaiting_continue = False
         st.session_state.finished = False
         st.rerun()
     st.stop()
 
 stage = len(st.session_state.artwork) + 1
-challenge_key = None
 
 if not st.session_state.awaiting_continue:
     st.subheader(f"도전 {stage}: 도형을 골라 계산해 보세요")
-    selection_cols = st.columns([1, 1, 2])
+    selection_cols = st.columns([1, 1, 1, 2])
     with selection_cols[0]:
         radius = st.selectbox("반지름", options=list(range(1, 11)), key=f"radius_{stage}")
     with selection_cols[1]:
         shape_label = st.selectbox("도형", options=list(SHAPES), key=f"shape_{stage}")
-    shape = SHAPES[shape_label]
-    measure = "둘레" if radius % 2 else "넓이"
-    unit = "cm" if measure == "둘레" else "cm²"
-    challenge_key = (stage, radius, shape)
     with selection_cols[2]:
+        measure = st.selectbox("무엇을 맞힐까요?", options=["둘레", "넓이"], key=f"measure_{stage}")
+    shape = SHAPES[shape_label]
+    unit = "cm" if measure == "둘레" else "cm²"
+    with selection_cols[3]:
         st.markdown(
             f"#### 반지름이 **{radius}**인 {shape_label}의 **{measure}**는 얼마일까요?"
         )
@@ -190,71 +195,66 @@ if not st.session_state.awaiting_continue:
             + ("원 둘레의 일부와 지름/반지름 변을 더해요." if shape != "circle" else "원 둘레를 구해요.")
         )
 
-    with st.form(f"answer_form_{stage}_{radius}_{shape}"):
+    st.markdown("**그림에 사용할 색과 위치를 골라 보세요. 정답을 맞히면 그림판에 추가돼요!**")
+    color_label = st.radio(
+        "색깔 팔레트",
+        options=list(COLORS),
+        horizontal=True,
+        key=f"palette_{stage}",
+        label_visibility="collapsed",
+    )
+
+    with st.form(f"answer_form_{stage}_{radius}_{shape}_{measure}"):
         answer = st.number_input(
             f"정답을 입력하세요 ({unit})",
             min_value=0.0,
             step=0.5,
             format="%g",
-            key=f"answer_{stage}_{radius}_{shape}",
+            key=f"answer_{stage}_{radius}_{shape}_{measure}",
         )
         check_answer = st.form_submit_button("정답 확인하기 ✨", type="primary")
 
     if check_answer:
         correct_answer = shape_measure(radius, shape, measure)
         if math.isclose(answer, correct_answer, abs_tol=0.001):
-            st.session_state.unlocked_key = challenge_key
+            st.session_state.artwork.append(
+                {
+                    "radius": radius,
+                    "shape": shape,
+                    "measure": measure,
+                    "color": COLORS[color_label],
+                    "x": 30 + (stage * 13) % 40,
+                    "y": 30 + (stage * 17) % 40,
+                }
+            )
+            st.session_state.awaiting_continue = True
             st.success(
                 f"정답이에요! {shape_formula(radius, shape, measure)} = "
                 f"{format_number(correct_answer)} {unit} 🎉"
             )
         else:
-            st.session_state.unlocked_key = None
             st.error("아쉬워요. 원주율은 3이에요. 식을 다시 생각하고 도전해 보세요!")
-
-    if st.session_state.unlocked_key == challenge_key:
-        st.markdown("**그림판에 놓을 준비가 되었어요!** 색과 위치를 고른 뒤 추가해 보세요.")
-        color_label = st.radio(
-            "색깔 팔레트",
-            options=list(COLORS),
-            horizontal=True,
-            key=f"palette_{stage}",
-            label_visibility="collapsed",
-        )
-        st.session_state.selected_color = color_label
-        position_cols = st.columns([1, 1, 1])
-        with position_cols[0]:
-            x_position = st.slider("가로 위치", 12, 88, 30 + (stage * 13) % 40, 2, key=f"x_{stage}")
-        with position_cols[1]:
-            y_position = st.slider("세로 위치", 20, 80, 30 + (stage * 17) % 40, 2, key=f"y_{stage}")
-        with position_cols[2]:
-            st.write("")
-            st.write("")
-            if st.button("이 도형 그림판에 놓기", type="primary", key=f"place_{stage}"):
-                st.session_state.artwork.append(
-                    {
-                        "radius": radius,
-                        "shape": shape,
-                        "color": COLORS[color_label],
-                        "x": x_position,
-                        "y": y_position,
-                    }
-                )
-                st.session_state.awaiting_continue = True
-                st.session_state.unlocked_key = None
-                st.rerun()
 else:
-    st.info("도형을 그림판에 놓았어요. 계속 도전하거나 작품을 완성해 보세요!")
+    st.info("도형이 그림판에 추가되었어요. 계속 도전하거나 작품을 완성해 보세요!")
 
-st.subheader("나만의 그림판")
-st.markdown(
-    f'<div class="board">{drawing_svg(st.session_state.artwork)}</div>',
-    unsafe_allow_html=True,
-)
-if st.session_state.artwork:
-    st.caption(f"그림판에 도형 {len(st.session_state.artwork)}개가 있어요.")
+if st.session_state.awaiting_continue and st.session_state.artwork:
+    last_index = len(st.session_state.artwork) - 1
+    last_item = st.session_state.artwork[last_index]
+    position_cols = st.columns(2)
+    with position_cols[0]:
+        x_position = st.slider(
+            "가로 위치", 12, 88, last_item["x"], 2, key=f"position_x_{last_index}"
+        )
+    with position_cols[1]:
+        y_position = st.slider(
+            "세로 위치", 20, 80, last_item["y"], 2, key=f"position_y_{last_index}"
+        )
+    last_item["x"] = x_position
+    last_item["y"] = y_position
 
-if st.session_state.artwork:
+show_drawing(st.session_state.artwork)
+
+if st.session_state.awaiting_continue and st.session_state.artwork:
     action_cols = st.columns(2)
     with action_cols[0]:
         if st.button(
